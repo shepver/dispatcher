@@ -1,0 +1,20 @@
+%%%-------------------------------------------------------------------
+%%% @author shepver
+%%% @copyright (C) 2014, <COMPANY>
+%%% @doc
+%%%
+%%% @end
+%%% Created : 01. Окт. 2014 11:04
+%%%-------------------------------------------------------------------
+{application, dispatcher, [
+  {description, ""},
+  {vsn, "0.1"},
+  {registered, []},
+  {applications, [
+    kernel,
+    stdlib
+  ]},
+  {modules, []},
+  {mod, {dispatcher, []}},
+  {env, []}
+]}.
