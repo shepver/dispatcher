@@ -10,7 +10,7 @@
 -author("shepver").
 
 -behaviour(gen_server).
--define(Config, "../config/script.conf").
+-define(Config, "config/script.conf").
 %% API
 -export([start_link/0]).
 
