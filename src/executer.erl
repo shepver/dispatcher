@@ -4,13 +4,13 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 16. Окт. 2014 17:01
+%%% Created : 21. Окт. 2014 15:20
 %%%-------------------------------------------------------------------
--module(dispatcher_srv).
+-module(executer).
 -author("shepver").
 
 -behaviour(gen_server).
--define(Config, "config/script.conf").
+
 %% API
 -export([start_link/0]).
 
@@ -23,8 +23,8 @@
   code_change/3]).
 
 -define(SERVER, ?MODULE).
--record(script, {name, command, interval, timer}).
--record(state, {scripts, list}).
+
+-record(state, {}).
 
 %%%===================================================================
 %%% API
@@ -60,23 +60,7 @@ start_link() ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
 init([]) ->
-  case file:consult(?Config) of
-    {ok, List} ->
-      Scripts =
-        lists:map(fun(X) ->
-          #script{
-            name = element(1, X),
-            command = element(2, X),
-            interval = element(3, X),
-            timer = erlang:send_after(1,
-              self(),
-              {run, element(1, X)})
-          }
-        end, List),
-      {ok, #state{scripts = Scripts}}
-  ;
-    {error, Reason} -> {stop, Reason}
-  end.
+  {ok, #state{}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -124,17 +108,6 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
-
-handle_info({run, Name}, #state{scripts = Scripts} = State) ->
-  {value, Script} = lists:keysearch(Name, 2, Scripts),
-  erlang:cancel_timer(Script#script.timer),
-  %% запускаем скрипт
-  Port = open_port({spawn, Script#script.command},
-    [{line, 80}, exit_status, stderr_to_stdout, in, binary]),
-  Timer = erlang:send_after(Script#script.interval * 1000, self(), {run, Name}),
-  {noreply, State#state{scripts = lists:keyreplace(Name, 2, Scripts,
-    Script#script{timer = Timer})}};
-
 handle_info(_Info, State) ->
   {noreply, State}.
 
