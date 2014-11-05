@@ -11,3 +11,4 @@
 -define(Dir,"priv/").
 
 -record(script, {name, command, interval, timer, port, copy}).
+

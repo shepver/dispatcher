@@ -10,13 +10,13 @@
 -author("shepver").
 
 -behaviour(supervisor).
-
+-include("statement.hrl").
 %% API
 -export([start_link/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
-
+-export([start_script/1]).
 -define(SERVER, ?MODULE).
 
 %%%===================================================================
@@ -33,6 +33,18 @@
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link() ->
   supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+
+
+start_script(Script)->
+   {ok, Pid} = supervisor:start_child(dispatcher_sv, {
+      Script#script.name,
+      {executor, start_link, [Script]},
+      transient,
+      2000,
+      worker,
+      [executor]
+   }),
+   Pid.
 
 %%%===================================================================
 %%% Supervisor callbacks
@@ -74,7 +86,7 @@ init([]) ->
   Pserver = {dispatcher_srv, {dispatcher_srv, start_link, []},
     Restart, Shutdown, Type, [dispatcher_srv]},
   Supervisor =
-    {supervisor,
+    {dispatcher_sv,
       {supervisor, start_link, [{local, dispatcher_sv}, ?MODULE, [disp]]},
       permanent,
       infinity,
