@@ -8,8 +8,9 @@
 %%%-------------------------------------------------------------------
 -module(dispatcher_srv).
 -author("shepver").
-
 -behaviour(gen_server).
+-include("statement.hrl").
+
 -define(Config, "config/script.conf").
 %% API
 -export([start_link/0]).
@@ -23,10 +24,10 @@
   code_change/3]).
 
 -define(SERVER, ?MODULE).
--record(script, {name, command, interval, timer, port, copy}).
+
 -record(script_enable, {name, port}).
 -record(script_list, {list, timer}).
--record(state, {scripts, list_enable, base_list}).
+-record(state, {scripts, list_enable, base_list,timer_script}).
 
 %%%===================================================================
 %%% API
@@ -66,10 +67,12 @@ init([]) ->
   case file:consult(?Config) of
     {ok, List} ->
       TimerList = erlang:send_after(120000, self(), chesk_list),
+      TimerScript  = erlang:send_after(100, self(), {run_list,List}),
       {ok, #state{
-        scripts = add_dict(Scripts, List),
+        scripts = Scripts,
         list_enable = dict:new(),
-        base_list = #script_list{list = List, timer = TimerList}
+        base_list = #script_list{list = List, timer = TimerList},
+        timer_script = TimerScript
       }};
     {error, Reason} -> {stop, Reason}
   end.
@@ -77,15 +80,31 @@ init([]) ->
 add_dict(Db, []) ->
   Db;
 add_dict(Db, [H | T]) ->
+  {ok, Pid} = supervisor:start_child(dispatcher_sv, {
+    element(1, H),
+    {executor, start_link, [
+      #script{
+        name = element(1, H),
+        command = element(2, H),
+        interval = element(3, H)
+      }]},
+    transient,
+    2000,
+    worker,
+    [executor]
+  }),
   NewDb = dict:store(element(1, H),
-    #script{
-      name = element(1, H),
-      command = element(2, H),
-      interval = element(3, H),
-      timer = erlang:send_after(1,
-        self(),
-        {run, element(1, H)})
-    }, Db),
+    Pid
+%%   #script{
+%%      name = element(1, H),
+%%      command = element(2, H),
+%%      interval = element(3, H),
+%%      timer = erlang:send_after(1,
+%%        self(),
+%%        {run, element(1, H)})
+%%    }
+    , Db),
+
   add_dict(NewDb, T).
 
 
@@ -149,19 +168,32 @@ handle_info({run, Name}, #state{scripts = Scripts, list_enable = ListEnable} = S
       NewScripts = dict:store(Name, NewScript, Scripts),
       NewListEnable = dict:store(Port, #script_enable{name = Name, port = Port}, ListEnable),
       {noreply, State#state{scripts = NewScripts, list_enable = NewListEnable}}
-end;
+  end;
+
+handle_info({run_list,List}, #state{scripts = Scripts,base_list = BaseList,timer_script = Timer} = State) ->
+  %% проверка на изменение списка запускаемых скриптов
+  erlang:cancel_timer(Timer),
+  NewScripts = add_dict(Scripts,List),
+  error_logger:info_msg("Check base list ~p .~n", [BaseList]),
+  {noreply, State#state{scripts = NewScripts}};
 
 handle_info(chesk_list, #state{base_list = BaseList} = State) ->
   %% проверка на изменение списка запускаемых скриптов
   error_logger:info_msg("Check base list ~p .~n", [BaseList]),
-    {noreply, State};
-
-handle_info({_Port, {data, Data}}, State) ->
-  error_logger:info_msg("Message ~p .~n", [Data]),
   {noreply, State};
 
-handle_info({Port, {exit_status, Status}} , State) ->
-  error_logger:info_msg("script finish work ~p status ~p.~n", [Port,Status]),
+handle_info({_Port, {data, Data}}, State) ->
+  case Data of
+    {eol, Line} ->
+      error_logger:info_msg("Message ~ts .~n", [Line]);
+  %%error_logger:info_msg("Message ~ts .~n", [unicode:characters_to_list(erlang:binary_to_list(Line),utf8)]);
+    {noeol, Line} ->
+      error_logger:info_msg("Message ~p .~n", [Line])
+  end,
+  {noreply, State};
+
+handle_info({Port, {exit_status, Status}}, State) ->
+  error_logger:info_msg("script finish work ~p status ~p.~n", [Port, Status]),
   {noreply, State};
 
 handle_info(_Info, State) ->

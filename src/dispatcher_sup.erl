@@ -55,6 +55,11 @@ start_link() ->
   }} |
   ignore |
   {error, Reason :: term()}).
+
+
+init([disp]) ->
+  {ok, {{one_for_one, 1, 10}, []}};
+
 init([]) ->
   RestartStrategy = one_for_one,
   MaxRestarts = 1000,
@@ -68,8 +73,15 @@ init([]) ->
 
   Pserver = {dispatcher_srv, {dispatcher_srv, start_link, []},
     Restart, Shutdown, Type, [dispatcher_srv]},
-
-  {ok, {SupFlags, [Pserver]}}.
+  Supervisor =
+    {supervisor,
+      {supervisor, start_link, [{local, dispatcher_sv}, ?MODULE, [disp]]},
+      permanent,
+      infinity,
+      supervisor,
+      []
+    },
+  {ok, {SupFlags, [Supervisor,Pserver]}}.
 
 %%%===================================================================
 %%% Internal functions

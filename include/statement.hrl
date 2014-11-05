@@ -9,3 +9,5 @@
 -author("shepver").
 -define(Starter, php).
 -define(Dir,"priv/").
+
+-record(script, {name, command, interval, timer, port, copy}).
