@@ -23,8 +23,10 @@
   code_change/3]).
 
 -define(SERVER, ?MODULE).
--record(script, {name, command, interval, timer}).
--record(state, {scripts, list}).
+-record(script, {name, command, interval, timer, port, copy}).
+-record(script_enable, {name, port}).
+-record(script_list, {list, timer}).
+-record(state, {scripts, list_enable, base_list}).
 
 %%%===================================================================
 %%% API
@@ -60,23 +62,32 @@ start_link() ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
 init([]) ->
+  Scripts = dict:new(),
   case file:consult(?Config) of
     {ok, List} ->
-      Scripts =
-        lists:map(fun(X) ->
-          #script{
-            name = element(1, X),
-            command = element(2, X),
-            interval = element(3, X),
-            timer = erlang:send_after(1,
-              self(),
-              {run, element(1, X)})
-          }
-        end, List),
-      {ok, #state{scripts = Scripts}}
-  ;
+      TimerList = erlang:send_after(120000, self(), chesk_list),
+      {ok, #state{
+        scripts = add_dict(Scripts, List),
+        list_enable = dict:new(),
+        base_list = #script_list{list = List, timer = TimerList}
+      }};
     {error, Reason} -> {stop, Reason}
   end.
+
+add_dict(Db, []) ->
+  Db;
+add_dict(Db, [H | T]) ->
+  NewDb = dict:store(element(1, H),
+    #script{
+      name = element(1, H),
+      command = element(2, H),
+      interval = element(3, H),
+      timer = erlang:send_after(1,
+        self(),
+        {run, element(1, H)})
+    }, Db),
+  add_dict(NewDb, T).
+
 
 %%--------------------------------------------------------------------
 %% @private
@@ -125,15 +136,33 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
 
-handle_info({run, Name}, #state{scripts = Scripts} = State) ->
-  {value, Script} = lists:keysearch(Name, 2, Scripts),
-  erlang:cancel_timer(Script#script.timer),
-  %% запускаем скрипт
-  Port = open_port({spawn, Script#script.command},
-    [{line, 80}, exit_status, stderr_to_stdout, in, binary]),
-  Timer = erlang:send_after(Script#script.interval * 1000, self(), {run, Name}),
-  {noreply, State#state{scripts = lists:keyreplace(Name, 2, Scripts,
-    Script#script{timer = Timer})}};
+handle_info({run, Name}, #state{scripts = Scripts, list_enable = ListEnable} = State) ->
+  case dict:find(Name, Scripts) of
+    error -> {noreply, State};
+    {ok, Script} ->
+      erlang:cancel_timer(Script#script.timer),
+      Port = open_port({spawn, Script#script.command},
+        [{line, 100}, exit_status, stderr_to_stdout, binary]),
+      error_logger:info_msg("script start work ~p .~n", [Port]),
+      Timer = erlang:send_after(Script#script.interval * 1000, self(), {run, Name}),
+      NewScript = Script#script{timer = Timer, port = Port},
+      NewScripts = dict:store(Name, NewScript, Scripts),
+      NewListEnable = dict:store(Port, #script_enable{name = Name, port = Port}, ListEnable),
+      {noreply, State#state{scripts = NewScripts, list_enable = NewListEnable}}
+end;
+
+handle_info(chesk_list, #state{base_list = BaseList} = State) ->
+  %% проверка на изменение списка запускаемых скриптов
+  error_logger:info_msg("Check base list ~p .~n", [BaseList]),
+    {noreply, State};
+
+handle_info({_Port, {data, Data}}, State) ->
+  error_logger:info_msg("Message ~p .~n", [Data]),
+  {noreply, State};
+
+handle_info({Port, {exit_status, Status}} , State) ->
+  error_logger:info_msg("script finish work ~p status ~p.~n", [Port,Status]),
+  {noreply, State};
 
 handle_info(_Info, State) ->
   {noreply, State}.
