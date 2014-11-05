@@ -61,7 +61,7 @@ start_link(Script) ->
    {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
    {stop, Reason :: term()} | ignore).
 init([Script]) ->
-   case file:open(lists:concat(["log/", Script#script.name, ".log"]), write) of
+   case file:open(lists:concat(["log/", Script#script.name, ".log"]), [append]) of
       {ok, IoDevice} ->
          Timer = erlang:send_after(10, self(), {run, Script#script.name}),
          {ok, #state{timer = Timer, log = IoDevice, script = Script}};

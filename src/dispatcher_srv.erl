@@ -25,7 +25,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(script_enable, {name, port}).
+
 -record(script_list, {list, timer}).
 -record(state, {scripts, list_enable, base_list, timer_script}).
 
