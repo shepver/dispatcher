@@ -24,7 +24,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {port, timer, script, log}).
+-record(state, {port, script, log, log_file_name, log_count}).
 
 
 %%%===================================================================
@@ -61,10 +61,11 @@ start_link(Script) ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
 init([Script]) ->
-  case file:open(lists:concat(["log/", Script#script.name, ".log"]), [append]) of
+  LogFileName = lists:concat(["log/", Script#script.name, ".log"]),
+  case file:open(LogFileName, [append]) of
     {ok, IoDevice} ->
-      Timer = erlang:send_after(10, self(), {run, Script#script.name}),
-      {ok, #state{timer = Timer, log = IoDevice, script = Script}};
+      erlang:send_after(10, self(), start_script),
+      {ok, #state{log = IoDevice, script = Script, log_file_name = LogFileName}};
     {error, Reason} -> {stop, Reason}
   end.
 
@@ -84,13 +85,11 @@ init([Script]) ->
   {stop, Reason :: term(), NewState :: #state{}}).
 
 
-handle_info({run, Name}, #state{timer = Timer, script = Script} = State) ->
-  erlang:cancel_timer(Timer),
+handle_info(start_script, #state{script = Script} = State) ->
   Port = open_port({spawn, Script#script.command},
     [{line, 100}, exit_status, stderr_to_stdout, binary]),
   error_logger:info_msg("script start work ~p .~n", [Port]),
-  NewTimer = erlang:send_after(Script#script.interval * 1000, self(), {run, Name}),
-  {noreply, State#state{port = Port, timer = NewTimer}}
+  {noreply, State#state{port = Port}}
 ;
 
 
@@ -107,8 +106,9 @@ handle_info({_Port, {data, Data}}, #state{log = IoFile} = State) ->
   end,
   {noreply, State};
 
-handle_info({Port, {exit_status, Status}}, State) ->
+handle_info({Port, {exit_status, Status}}, #state{script = Script} = State) ->
   error_logger:info_msg("script finish work ~p status ~p.~n", [Port, Status]),
+  erlang:send_after(Script#script.interval * 1000, self(), start_script),
   {noreply, State};
 
 handle_info(_Info, State) ->
