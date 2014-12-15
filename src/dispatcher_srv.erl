@@ -138,14 +138,14 @@ handle_cast(_Request, State) ->
    {stop, Reason :: term(), NewState :: #state{}}).
 
 handle_info({run_list, List}, #state{scripts = Scripts, base_list = BaseList, timer_script = Timer} = State) ->
-   %% проверка на изменение списка запускаемых скриптов
+  
    erlang:cancel_timer(Timer),
    NewScripts = add_dict(Scripts, List),
    error_logger:info_msg("Check base list ~p .~n", [BaseList]),
    {noreply, State#state{scripts = NewScripts}};
 
 handle_info(chesk_list, #state{base_list = BaseList} = State) ->
-   %% проверка на изменение списка запускаемых скриптов
+
    error_logger:info_msg("Check base list ~p .~n", [BaseList]),
    {noreply, State};
 
